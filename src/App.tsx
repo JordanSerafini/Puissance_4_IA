@@ -49,10 +49,10 @@ const checkWin = (matrix: Array<Array<string | null>>, player: Player): boolean 
   for (let col = 0; col < numCols; col++) {
     for (let row = 0; row < numRows; row++) {
       if (
-        checkDirection(matrix, row, col, 0, 1, player) || // Horizontal
-        checkDirection(matrix, row, col, 1, 0, player) || // Vertical
-        checkDirection(matrix, row, col, 1, 1, player) || // Diagonal down-right
-        checkDirection(matrix, row, col, 1, -1, player)   // Diagonal down-left
+        checkDirection(matrix, row, col, 0, 1, player) || 
+        checkDirection(matrix, row, col, 1, 0, player) || 
+        checkDirection(matrix, row, col, 1, 1, player) || 
+        checkDirection(matrix, row, col, 1, -1, player)   
       ) {
         return true;
       }
@@ -137,7 +137,6 @@ const App: React.FC = () => {
 
       if (checkWin(newMatrix, currentPlayer)) {
         console.log(`${currentPlayer} wins!`);
-        // Reset game or handle win
         setMatrix(initializeMatrix());
       } else {
         setMatrix(newMatrix);
