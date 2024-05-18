@@ -79,7 +79,7 @@ const trainModel = async (model: tf.Sequential, xs: tf.Tensor, ys: tf.Tensor) =>
       },
     },
   });
-  console.log('Model trained.');
+  //console.log('Model trained.');
 };
 
 const getBestMove = (model: tf.Sequential, matrix: Array<Array<string | null>>): number => {
