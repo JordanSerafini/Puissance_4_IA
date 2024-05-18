@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import * as tf from '@tensorflow/tfjs';
 
 // Types pour les joueurs
-type Player = '1' | '2';
+type Player = 'R' | 'Y';
 
 // Constantes pour les dimensions de la grille
 const numRows = 6;
@@ -43,14 +44,15 @@ const checkDirection = (matrix: Array<Array<string | null>>, startRow: number, s
   return count === 4;
 };
 
+// Vérifier la victoire
 const checkWin = (matrix: Array<Array<string | null>>, player: Player): boolean => {
   for (let col = 0; col < numCols; col++) {
     for (let row = 0; row < numRows; row++) {
       if (
-        checkDirection(matrix, row, col, 0, 1, player) ||
-        checkDirection(matrix, row, col, 1, 0, player) || 
-        checkDirection(matrix, row, col, 1, 1, player) ||
-        checkDirection(matrix, row, col, 1, -1, player)   
+        checkDirection(matrix, row, col, 0, 1, player) || // Horizontal
+        checkDirection(matrix, row, col, 1, 0, player) || // Vertical
+        checkDirection(matrix, row, col, 1, 1, player) || // Diagonal down-right
+        checkDirection(matrix, row, col, 1, -1, player)   // Diagonal down-left
       ) {
         return true;
       }
@@ -59,9 +61,75 @@ const checkWin = (matrix: Array<Array<string | null>>, player: Player): boolean 
   return false;
 };
 
+// Définir le modèle
+const createModel = () => {
+  const model = tf.sequential();
+
+  // Ajout de couches au modèle
+  model.add(tf.layers.dense({ inputShape: [numCols * numRows], units: 128, activation: 'relu' }));
+  model.add(tf.layers.dense({ units: 128, activation: 'relu' }));
+  model.add(tf.layers.dense({ units: numCols, activation: 'softmax' }));
+
+  // Compiler le modèle
+  model.compile({
+    optimizer: 'adam',
+    loss: 'categoricalCrossentropy',
+    metrics: ['accuracy'],
+  });
+
+  return model;
+};
+
+const model = createModel();
+
+const generateTrainingData = () => {
+  const inputs: number[][] = [];
+  const outputs: number[][] = [];
+
+  for (let i = 0; i < 1000; i++) {
+    const board = Array(numCols * numRows).fill(0);
+    const move = Math.floor(Math.random() * numCols);
+    inputs.push(board);
+    const output = Array(numCols).fill(0);
+    output[move] = 1;
+    outputs.push(output);
+  }
+
+  const xs = tf.tensor2d(inputs);
+  const ys = tf.tensor2d(outputs);
+
+  return { xs, ys };
+};
+
+const { xs, ys } = generateTrainingData();
+
+const trainModel = async (model: tf.Sequential, xs: tf.Tensor, ys: tf.Tensor) => {
+  await model.fit(xs, ys, {
+    epochs: 100,
+    callbacks: {
+      onEpochEnd: (epoch: number, logs?: tf.Logs) => {
+        if (logs) {
+          console.log(`Epoch ${epoch}: loss = ${logs.loss}, accuracy = ${logs.acc}`);
+        }
+      },
+    },
+  });
+};
+
+trainModel(model, xs, ys).then(() => {
+  console.log('Model trained');
+});
+
+const getBestMove = (model: tf.Sequential, matrix: Array<Array<string | null>>) => {
+  const board = matrix.flat().map(cell => cell === 'R' ? 1 : cell === 'Y' ? -1 : 0);
+  const prediction = model.predict(tf.tensor2d([board])) as tf.Tensor;
+  const move = prediction.argMax(-1).dataSync()[0];
+  return move;
+};
+
 const App: React.FC = () => {
-  const [matrix, setMatrix] = React.useState<Array<Array<string | null>>>(initializeMatrix());
-  const [currentPlayer, setCurrentPlayer] = React.useState<Player>('R');
+  const [matrix, setMatrix] = useState<Array<Array<string | null>>>(initializeMatrix());
+  const [currentPlayer, setCurrentPlayer] = useState<Player>('R');
 
   const playTurn = (col: number): void => {
     try {
@@ -83,6 +151,17 @@ const App: React.FC = () => {
       }
     }
   };
+
+  const playAITurn = () => {
+    const col = getBestMove(model, matrix);
+    playTurn(col);
+  };
+
+  useEffect(() => {
+    if (currentPlayer === 'Y') {
+      playAITurn();
+    }
+  }, [currentPlayer]);
 
   return (
     <div>
