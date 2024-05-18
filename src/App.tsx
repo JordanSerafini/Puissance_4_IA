@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { createModel } from './model';
 import * as tf from '@tensorflow/tfjs';
+import LZString from 'lz-string';
 
 type Player = 'R' | 'Y';
 
@@ -8,7 +9,7 @@ const numRows = 6;
 const numCols = 7;
 
 const initializeMatrix = (): Array<Array<string | null>> => {
-  console.log('Initializing matrix...');
+  //console.log('Initializing matrix...');
   return Array(numCols).fill(null).map(() => Array(numRows).fill(null));
 };
 
@@ -65,7 +66,7 @@ const player1Model = createModel();
 const player2Model = createModel();
 
 const trainModel = async (model: tf.Sequential, xs: tf.Tensor, ys: tf.Tensor) => {
-  console.log('Training model...');
+ // console.log('Training model...');
   await model.fit(xs, ys, {
     epochs: 1,
     batchSize: 32,
@@ -114,45 +115,51 @@ const App: React.FC = () => {
   const [currentPlayer, setCurrentPlayer] = useState<Player>('R');
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [gameData, setGameData] = useState<{ boards: number[][], moves: number[] }>({ boards: [], moves: [] });
+  const [allGameData, setAllGameData] = useState<{ boards: number[][], moves: number[] }>({ boards: [], moves: [] });
   const [winner, setWinner] = useState<Player | null>(null);
   const [isTraining, setIsTraining] = useState<boolean>(true);
   const [gameOver, setGameOver] = useState<boolean>(false);
+  const [partiePlayed, setPartiePlayed] = useState<number>(0);
 
   useEffect(() => {
     const train = async () => {
       const storedGameData = localStorage.getItem('gameData');
       if (storedGameData) {
-        const { boards, moves } = JSON.parse(storedGameData);
-        if (boards.length > 0 && moves.length > 0) {
-          const xs = tf.tensor2d(boards);
-          const ys = tf.oneHot(tf.tensor1d(moves, 'int32'), numCols);
-          await trainModel(player1Model, xs, ys);
-          await trainModel(player2Model, xs, ys);
+        const decompressedData = LZString.decompress(storedGameData);
+        if (decompressedData) {
+          try {
+            const parsedData = JSON.parse(decompressedData);
+            const { boards, moves } = parsedData;
+            if (Array.isArray(boards) && Array.isArray(moves)) {
+              const xs = tf.tensor2d(boards);
+              const ys = tf.oneHot(tf.tensor1d(moves, 'int32'), numCols);
+              await trainModel(player1Model, xs, ys);
+              await trainModel(player2Model, xs, ys);
+              setAllGameData({ boards, moves });
+            }
+          } catch (error) {
+            console.error('Error parsing stored game data:', error);
+          }
         }
       }
-      console.log('Models trained');
+      //console.log('Models trained');
       setIsTraining(false);
     };
     train();
   }, []);
 
   const startGame = () => {
-    console.log('Starting new game...');
+    setPartiePlayed(partiePlayed + 1);
+    console.log(partiePlayed);
     setMatrix(initializeMatrix());
     setCurrentPlayer('R');
     setIsPlaying(true);
     setWinner(null);
     setGameOver(false);
-    const storedGameData = localStorage.getItem('gameData');
-    if (storedGameData) {
-      const parsedGameData = JSON.parse(storedGameData);
-      setGameData(parsedGameData);
-    } else {
-      setGameData({ boards: [], moves: [] });
-    }
+    setGameData({ boards: [], moves: [] });
   };
 
-  const playTurn = (col: number): void => {
+  const playTurn = useCallback((col: number): void => {
     if (gameOver) return;
 
     try {
@@ -175,14 +182,17 @@ const App: React.FC = () => {
           const ys = tf.oneHot(tf.tensor1d(gameData.moves, 'int32'), numCols);
           trainModel(currentPlayer === 'R' ? player1Model : player2Model, xs, ys);
 
-          const storedGameData = localStorage.getItem('gameData');
-          let allGameData: { boards: number[][]; moves: number[] } = { boards: [], moves: [] };
-          if (storedGameData) {
-            allGameData = JSON.parse(storedGameData);
-          }
-          allGameData.boards = [...allGameData.boards, ...gameData.boards];
-          allGameData.moves = [...allGameData.moves, ...gameData.moves];
-          localStorage.setItem('gameData', JSON.stringify(allGameData));
+          setAllGameData(prevData => {
+            const newBoards = [...prevData.boards, ...gameData.boards];
+            const newMoves = [...prevData.moves, ...gameData.moves];
+
+            localStorage.setItem('gameData', LZString.compress(JSON.stringify({ boards: newBoards, moves: newMoves })));
+
+            return {
+              boards: newBoards,
+              moves: newMoves
+            };
+          });
 
           startGame();
         }, 3000);
@@ -208,7 +218,7 @@ const App: React.FC = () => {
         console.error('An unknown error occurred');
       }
     }
-  };
+  }, [currentPlayer, gameData, gameOver, matrix]);
 
   const playAITurn = useCallback(() => {
     if (!isPlaying) return;
@@ -216,7 +226,7 @@ const App: React.FC = () => {
     const model = currentPlayer === 'R' ? player1Model : player2Model;
     const col = getBestMove(model, matrix);
     playTurn(col);
-  }, [currentPlayer, isPlaying, matrix]);
+  }, [currentPlayer, isPlaying, matrix, playTurn]);
 
   useEffect(() => {
     if (isPlaying) {
@@ -225,9 +235,6 @@ const App: React.FC = () => {
     }
   }, [currentPlayer, isPlaying, playAITurn]);
 
-  useEffect(() => {
-    console.log(gameData);
-  }, [gameData]);
 
   return (
     <div>
