@@ -9,6 +9,7 @@ const initializeMatrix = (): Array<Array<string | null>> => {
   return Array(numCols).fill(null).map(() => Array(numRows).fill(null));
 };
 
+
 const addTokenToCol = (matrix: Array<Array<string | null>>, col: number, player: Player): Array<Array<string | null>> => {
   if (col < 0 || col >= numCols) {
     throw new Error('Out of range');
